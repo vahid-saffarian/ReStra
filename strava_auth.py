@@ -43,22 +43,26 @@ def get_strava_auth_url():
 def exchange_code_for_token(code):
     """Exchange user's authorization code for their access token"""
     if not all([STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, STRAVA_REDIRECT_URI, code]):
-        logger.error("Missing required parameters for token exchange")
+        logger.error(f"Missing required parameters for token exchange. Client ID: {bool(STRAVA_CLIENT_ID)}, Secret: {bool(STRAVA_CLIENT_SECRET)}, Redirect URI: {STRAVA_REDIRECT_URI}, Code: {bool(code)}")
         return None
         
     try:
         # Log the request parameters (excluding client secret for security)
         logger.info(f"Attempting token exchange with client_id={STRAVA_CLIENT_ID}, redirect_uri={STRAVA_REDIRECT_URI}")
         
+        data = {
+            'client_id': STRAVA_CLIENT_ID,
+            'client_secret': STRAVA_CLIENT_SECRET,
+            'code': code,
+            'grant_type': 'authorization_code',
+            'redirect_uri': STRAVA_REDIRECT_URI
+        }
+        
+        logger.info(f"Token exchange request data: {data}")
+        
         response = requests.post(
             'https://www.strava.com/oauth/token',
-            data={
-                'client_id': STRAVA_CLIENT_ID,
-                'client_secret': STRAVA_CLIENT_SECRET,
-                'code': code,
-                'grant_type': 'authorization_code',
-                'redirect_uri': STRAVA_REDIRECT_URI
-            }
+            data=data
         )
         
         # If the request fails, log the response content
@@ -67,7 +71,9 @@ def exchange_code_for_token(code):
             logger.error(f"Response content: {response.text}")
             response.raise_for_status()
             
-        return response.json()
+        token_data = response.json()
+        logger.info("Successfully exchanged code for token")
+        return token_data
     except requests.exceptions.RequestException as e:
         logger.error(f"Error exchanging code for token: {str(e)}")
         return None

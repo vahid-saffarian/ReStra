@@ -214,8 +214,29 @@ def handle_auth_code(chat_id, code):
     """Handle Strava authorization code"""
     global auth_sessions
     try:
+        logger.info(f"Received authorization code for chat_id {chat_id}")
+        
+        # Check if the session exists
+        if chat_id not in auth_sessions:
+            logger.error(f"No active session found for chat_id {chat_id}")
+            message = "❌ Your authorization session has expired. Please use /connect to start again."
+            send_telegram_message(message, chat_id)
+            return
+            
+        # Check if the session has expired
+        session = auth_sessions[chat_id]
+        if (datetime.now() - session['timestamp']).total_seconds() > 300:  # 5 minutes
+            logger.error(f"Session expired for chat_id {chat_id}")
+            del auth_sessions[chat_id]
+            message = "❌ Your authorization session has expired. Please use /connect to start again."
+            send_telegram_message(message, chat_id)
+            return
+            
+        logger.info(f"Exchanging code for token for chat_id {chat_id}")
         tokens = exchange_code_for_token(code)
+        
         if tokens:
+            logger.info(f"Successfully exchanged code for token for chat_id {chat_id}")
             database.add_user(
                 chat_id,
                 tokens['access_token'],
@@ -227,9 +248,10 @@ def handle_auth_code(chat_id, code):
                 del auth_sessions[chat_id]
             message = "✅ Your Strava account has been connected successfully!"
         else:
+            logger.error(f"Failed to exchange code for token for chat_id {chat_id}")
             message = "❌ Failed to connect your Strava account. Please try again with /connect."
     except Exception as e:
-        logger.error(f"Error handling auth code: {str(e)}")
+        logger.error(f"Error handling auth code for chat_id {chat_id}: {str(e)}")
         message = "❌ An error occurred while connecting your account. Please try again with /connect."
     
     send_telegram_message(message, chat_id)
@@ -376,9 +398,12 @@ def main():
                     chat_id = str(message["chat"]["id"])
                     text = message.get("text", "")
                     
+                    logger.info(f"Received message from chat_id {chat_id}: {text}")
+                    
                     # Handle commands
                     if text.startswith("/"):
                         command = text.split()[0].lower()
+                        logger.info(f"Handling command: {command} for chat_id {chat_id}")
                         if command == "/start":
                             handle_start(chat_id)
                         elif command == "/help":
@@ -391,7 +416,10 @@ def main():
                             handle_status(chat_id)
                     # Handle auth code
                     elif chat_id in auth_sessions:
+                        logger.info(f"Processing auth code for chat_id {chat_id}")
                         handle_auth_code(chat_id, text)
+                    else:
+                        logger.info(f"Message not handled for chat_id {chat_id}")
             
             # Process activities for all users
             for chat_id in database.get_all_users():
