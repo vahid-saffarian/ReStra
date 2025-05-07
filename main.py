@@ -5,7 +5,7 @@ import logging
 import random
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from strava_auth import get_strava_header, get_strava_auth_url, exchange_code_for_token
+from strava_auth import get_strava_header, get_strava_auth_url, exchange_code_for_token, get_authorization_url
 import database
 
 # Set up logging
@@ -149,118 +149,212 @@ Available commands:
 """
     send_telegram_message(message, chat_id)
 
-def handle_connect(chat_id):
-    """Handle /connect command"""
-    # Check if user already has an active session
-    session = database.get_auth_session(chat_id)
-    if session:
-        message = "You already have an active connection session. Please complete the current authorization process or wait for it to expire."
-        send_telegram_message(message, chat_id)
-        return
-    
-    # Check if bot is properly configured
-    if not STRAVA_CLIENT_ID or not STRAVA_CLIENT_SECRET:
-        message = "❌ Error: Bot is not properly configured. Please contact the bot administrator."
-        send_telegram_message(message, chat_id)
-        return
-        
-    # Generate authorization URL using the function from strava_auth.py
-    auth_url = get_strava_auth_url()
-    if not auth_url:
-        message = "❌ Error: Could not generate authorization URL. Please try again later."
-        send_telegram_message(message, chat_id)
-        return
-    
-    # Create new auth session
-    state = random.randint(100000, 999999)
-    timestamp = datetime.now()
-    database.add_auth_session(chat_id, state, timestamp)
-    
-    message = f"""
-To connect your Strava account:
-
-1. Click this link: {auth_url}
-2. Log in to your Strava account
-3. Authorize the bot to access your activities
-4. You'll be redirected to a page with your authorization code
-5. Copy the code and send it back to me
-
-You have 5 minutes to complete this process.
-"""
-    send_telegram_message(message, chat_id)
-
-def handle_disconnect(chat_id):
-    """Handle /disconnect command"""
+def handle_connect(bot, update):
+    """Handle the /connect command"""
     try:
+        chat_id = update['message']['chat']['id']
+        logger.info(f"Handling connect command for chat_id {chat_id}")
+        
+        # Check if user already has an active session
+        session = database.get_auth_session(chat_id)
+        if session:
+            logger.info(f"User {chat_id} has an active session")
+            bot.send_message(
+                chat_id=chat_id,
+                text="You already have an active authorization session. Please complete the current authorization process or wait for it to expire."
+            )
+            return
+
+        # Check if user is already connected
         user = database.get_user(chat_id)
         if user:
-            database.add_user(chat_id, None, None, None)
-            message = "Your Strava account has been disconnected. Use /connect to link a new account."
-        else:
-            message = "You don't have a connected Strava account."
-        send_telegram_message(message, chat_id)
+            logger.info(f"User {chat_id} is already connected")
+            bot.send_message(
+                chat_id=chat_id,
+                text="You are already connected to Strava. Use /disconnect to remove the connection first."
+            )
+            return
+
+        # Generate authorization URL
+        auth_url = get_authorization_url()
+        if not auth_url:
+            logger.error("Failed to generate authorization URL")
+            bot.send_message(
+                chat_id=chat_id,
+                text="Sorry, there was an error generating the authorization URL. Please try again later."
+            )
+            return
+
+        # Create auth session
+        state = os.urandom(16).hex()
+        timestamp = datetime.now()
+        if not database.add_auth_session(chat_id, state, timestamp):
+            logger.error(f"Failed to create auth session for {chat_id}")
+            bot.send_message(
+                chat_id=chat_id,
+                text="Sorry, there was an error creating your authorization session. Please try again later."
+            )
+            return
+
+        # Send authorization URL to user
+        bot.send_message(
+            chat_id=chat_id,
+            text=f"Please click the link below to authorize the bot to access your Strava account:\n\n{auth_url}\n\nAfter authorizing, you'll be redirected to a page with an authorization code. Copy that code and send it back to me."
+        )
+        logger.info(f"Sent authorization URL to user {chat_id}")
+
+    except Exception as e:
+        logger.error(f"Error in handle_connect: {str(e)}")
+        if 'bot' in locals() and 'chat_id' in locals():
+            bot.send_message(
+                chat_id=chat_id,
+                text="Sorry, there was an error processing your request. Please try again later."
+            )
+
+def handle_disconnect(bot, update):
+    """Handle the /disconnect command"""
+    try:
+        chat_id = update['message']['chat']['id']
+        logger.info(f"Handling disconnect command for chat_id {chat_id}")
+
+        # Check if user is connected
+        user = database.get_user(chat_id)
+        if not user:
+            logger.info(f"User {chat_id} is not connected")
+            bot.send_message(
+                chat_id=chat_id,
+                text="You are not connected to Strava. Use /connect to connect your account."
+            )
+            return
+
+        # Remove user data
+        if not database.remove_user(chat_id):
+            logger.error(f"Failed to remove user data for {chat_id}")
+            bot.send_message(
+                chat_id=chat_id,
+                text="Sorry, there was an error disconnecting your account. Please try again later."
+            )
+            return
+
+        # Send success message
+        bot.send_message(
+            chat_id=chat_id,
+            text="✅ Successfully disconnected from Strava. Use /connect to connect your account again."
+        )
+        logger.info(f"Successfully disconnected user {chat_id} from Strava")
+
     except Exception as e:
         logger.error(f"Error in handle_disconnect: {str(e)}")
-        message = "❌ An error occurred while disconnecting your account. Please try again."
-        send_telegram_message(message, chat_id)
+        if 'bot' in locals() and 'chat_id' in locals():
+            bot.send_message(
+                chat_id=chat_id,
+                text="Sorry, there was an error processing your request. Please try again later."
+            )
 
-def handle_status(chat_id):
-    """Handle /status command"""
+def handle_status(bot, update):
+    """Handle the /status command"""
     try:
+        chat_id = update['message']['chat']['id']
+        logger.info(f"Handling status command for chat_id {chat_id}")
+
+        # Check if user is connected
         user = database.get_user(chat_id)
-        if user and user[1]:  # Check if user has access token
-            message = "✅ Your Strava account is connected!"
-        else:
-            message = "❌ Your Strava account is not connected. Use /connect to link your account."
-        send_telegram_message(message, chat_id)
+        if not user:
+            logger.info(f"User {chat_id} is not connected")
+            bot.send_message(
+                chat_id=chat_id,
+                text="You are not connected to Strava. Use /connect to connect your account."
+            )
+            return
+
+        # Check if token is expired
+        expires_at = datetime.fromisoformat(user['expires_at'])
+        if datetime.now() >= expires_at:
+            logger.info(f"Token expired for user {chat_id}")
+            bot.send_message(
+                chat_id=chat_id,
+                text="Your Strava connection has expired. Use /connect to reconnect your account."
+            )
+            return
+
+        # Send status message
+        bot.send_message(
+            chat_id=chat_id,
+            text="✅ Your Strava account is connected and active."
+        )
+        logger.info(f"Successfully sent status to user {chat_id}")
+
     except Exception as e:
         logger.error(f"Error in handle_status: {str(e)}")
-        message = "❌ An error occurred while checking your status. Please try again."
-        send_telegram_message(message, chat_id)
+        if 'bot' in locals() and 'chat_id' in locals():
+            bot.send_message(
+                chat_id=chat_id,
+                text="Sorry, there was an error checking your status. Please try again later."
+            )
 
-def handle_auth_code(chat_id, code):
-    """Handle Strava authorization code"""
+def handle_auth_code(bot, update):
+    """Handle the authorization code from the user"""
     try:
-        logger.info(f"Received authorization code for chat_id {chat_id}")
-        
-        # Check if the session exists
+        chat_id = update['message']['chat']['id']
+        code = update['message']['text']
+        logger.info(f"Handling auth code for chat_id {chat_id}")
+
+        # Check if user has an active session
         session = database.get_auth_session(chat_id)
         if not session:
-            logger.error(f"No active session found for chat_id {chat_id}")
-            message = "❌ Your authorization session has expired. Please use /connect to start again."
-            send_telegram_message(message, chat_id)
-            return
-            
-        # Check if the session has expired
-        if (datetime.now() - session['timestamp']).total_seconds() > 300:  # 5 minutes
-            logger.error(f"Session expired for chat_id {chat_id}")
-            database.remove_auth_session(chat_id)
-            message = "❌ Your authorization session has expired. Please use /connect to start again."
-            send_telegram_message(message, chat_id)
-            return
-            
-        logger.info(f"Exchanging code for token for chat_id {chat_id}")
-        tokens = exchange_code_for_token(code)
-        
-        if tokens:
-            logger.info(f"Successfully exchanged code for token for chat_id {chat_id}")
-            database.add_user(
-                chat_id,
-                tokens['access_token'],
-                tokens['refresh_token'],
-                tokens['expires_at']
+            logger.info(f"No active session found for {chat_id}")
+            bot.send_message(
+                chat_id=chat_id,
+                text="No active authorization session found. Please use /connect to start the authorization process."
             )
-            # Remove the session after successful authentication
+            return
+
+        # Check if session has expired
+        if datetime.now() - session['timestamp'] > timedelta(minutes=5):
+            logger.info(f"Session expired for {chat_id}")
             database.remove_auth_session(chat_id)
-            message = "✅ Your Strava account has been connected successfully!"
-        else:
-            logger.error(f"Failed to exchange code for token for chat_id {chat_id}")
-            message = "❌ Failed to connect your Strava account. Please try again with /connect."
+            bot.send_message(
+                chat_id=chat_id,
+                text="Your authorization session has expired. Please use /connect to start a new session."
+            )
+            return
+
+        # Exchange code for tokens
+        tokens = exchange_code_for_token(code)
+        if not tokens:
+            logger.error(f"Failed to exchange code for tokens for {chat_id}")
+            bot.send_message(
+                chat_id=chat_id,
+                text="Sorry, there was an error exchanging the authorization code. Please try again with /connect."
+            )
+            return
+
+        # Store user data
+        if not database.add_user(chat_id, tokens['access_token'], tokens['refresh_token'], tokens['expires_at']):
+            logger.error(f"Failed to store user data for {chat_id}")
+            bot.send_message(
+                chat_id=chat_id,
+                text="Sorry, there was an error storing your connection. Please try again with /connect."
+            )
+            return
+
+        # Clean up session
+        database.remove_auth_session(chat_id)
+
+        # Send success message
+        bot.send_message(
+            chat_id=chat_id,
+            text="✅ Successfully connected to Strava! You can now use the bot to interact with your Strava account."
+        )
+        logger.info(f"Successfully connected user {chat_id} to Strava")
+
     except Exception as e:
-        logger.error(f"Error handling auth code for chat_id {chat_id}: {str(e)}")
-        message = "❌ An error occurred while connecting your account. Please try again with /connect."
-    
-    send_telegram_message(message, chat_id)
+        logger.error(f"Error in handle_auth_code: {str(e)}")
+        if 'bot' in locals() and 'chat_id' in locals():
+            bot.send_message(
+                chat_id=chat_id,
+                text="Sorry, there was an error processing your authorization code. Please try again with /connect."
+            )
 
 def send_telegram_message(message, chat_id):
     """Send a message to Telegram bot"""
