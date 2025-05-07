@@ -192,22 +192,32 @@ You have 5 minutes to complete this process.
 
 def handle_disconnect(chat_id):
     """Handle /disconnect command"""
-    user = database.get_user(chat_id)
-    if user:
-        database.add_user(chat_id, None, None, None)
-        message = "Your Strava account has been disconnected. Use /connect to link a new account."
-    else:
-        message = "You don't have a connected Strava account."
-    send_telegram_message(message, chat_id)
+    try:
+        user = database.get_user(chat_id)
+        if user:
+            database.add_user(chat_id, None, None, None)
+            message = "Your Strava account has been disconnected. Use /connect to link a new account."
+        else:
+            message = "You don't have a connected Strava account."
+        send_telegram_message(message, chat_id)
+    except Exception as e:
+        logger.error(f"Error in handle_disconnect: {str(e)}")
+        message = "❌ An error occurred while disconnecting your account. Please try again."
+        send_telegram_message(message, chat_id)
 
 def handle_status(chat_id):
     """Handle /status command"""
-    user = database.get_user(chat_id)
-    if user and user[1]:  # Check if user has access token
-        message = "✅ Your Strava account is connected!"
-    else:
-        message = "❌ Your Strava account is not connected. Use /connect to link your account."
-    send_telegram_message(message, chat_id)
+    try:
+        user = database.get_user(chat_id)
+        if user and user[1]:  # Check if user has access token
+            message = "✅ Your Strava account is connected!"
+        else:
+            message = "❌ Your Strava account is not connected. Use /connect to link your account."
+        send_telegram_message(message, chat_id)
+    except Exception as e:
+        logger.error(f"Error in handle_status: {str(e)}")
+        message = "❌ An error occurred while checking your status. Please try again."
+        send_telegram_message(message, chat_id)
 
 def handle_auth_code(chat_id, code):
     """Handle Strava authorization code"""

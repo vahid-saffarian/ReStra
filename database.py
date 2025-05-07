@@ -1,60 +1,50 @@
 import sqlite3
+import logging
 from datetime import datetime
 
-def init_db():
-    """Initialize the database with required tables"""
-    conn = sqlite3.connect('strava_bot.db')
-    c = conn.cursor()
-    
-    # Create users table
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            telegram_id TEXT PRIMARY KEY,
-            strava_access_token TEXT,
-            strava_refresh_token TEXT,
-            strava_token_expires_at INTEGER,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
+logger = logging.getLogger(__name__)
 
-def add_user(telegram_id, access_token, refresh_token, expires_at):
-    """Add or update a user's Strava tokens"""
-    conn = sqlite3.connect('strava_bot.db')
-    c = conn.cursor()
-    
-    c.execute('''
-        INSERT OR REPLACE INTO users 
-        (telegram_id, strava_access_token, strava_refresh_token, strava_token_expires_at)
+# Use in-memory database for serverless environment
+conn = sqlite3.connect(':memory:', check_same_thread=False)
+cursor = conn.cursor()
+
+# Create users table
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS users (
+    chat_id TEXT PRIMARY KEY,
+    access_token TEXT,
+    refresh_token TEXT,
+    expires_at INTEGER
+)
+''')
+conn.commit()
+
+def add_user(chat_id, access_token, refresh_token, expires_at):
+    """Add or update a user in the database"""
+    try:
+        cursor.execute('''
+        INSERT OR REPLACE INTO users (chat_id, access_token, refresh_token, expires_at)
         VALUES (?, ?, ?, ?)
-    ''', (telegram_id, access_token, refresh_token, expires_at))
-    
-    conn.commit()
-    conn.close()
+        ''', (chat_id, access_token, refresh_token, expires_at))
+        conn.commit()
+        logger.info(f"User {chat_id} added/updated in database")
+    except Exception as e:
+        logger.error(f"Error adding user to database: {str(e)}")
 
-def get_user(telegram_id):
-    """Get user's Strava tokens"""
-    conn = sqlite3.connect('strava_bot.db')
-    c = conn.cursor()
-    
-    c.execute('SELECT * FROM users WHERE telegram_id = ?', (telegram_id,))
-    user = c.fetchone()
-    
-    conn.close()
-    return user
+def get_user(chat_id):
+    """Get a user from the database"""
+    try:
+        cursor.execute('SELECT * FROM users WHERE chat_id = ?', (chat_id,))
+        return cursor.fetchone()
+    except Exception as e:
+        logger.error(f"Error getting user from database: {str(e)}")
+        return None
 
 def get_all_users():
-    """Get all registered users"""
-    conn = sqlite3.connect('strava_bot.db')
-    c = conn.cursor()
-    
-    c.execute('SELECT telegram_id FROM users')
-    users = c.fetchall()
-    
-    conn.close()
-    return [user[0] for user in users]
-
-# Initialize database when module is imported
-init_db() 
+    """Get all users from the database"""
+    try:
+        cursor.execute('SELECT chat_id FROM users')
+        return [row[0] for row in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Error getting all users from database: {str(e)}")
+        return [] 
