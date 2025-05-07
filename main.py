@@ -151,6 +151,12 @@ def handle_connect(chat_id):
     """Handle /connect command"""
     global auth_sessions
     
+    # Check if user already has an active session
+    if chat_id in auth_sessions:
+        message = "You already have an active connection session. Please complete the current authorization process or wait for it to expire."
+        send_telegram_message(message, chat_id)
+        return
+    
     # Check if bot is properly configured
     if not STRAVA_CLIENT_ID or not STRAVA_CLIENT_SECRET:
         message = "❌ Error: Bot is not properly configured. Please contact the bot administrator."
