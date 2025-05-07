@@ -5,7 +5,7 @@ import logging
 import random
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from strava_auth import get_strava_header, get_strava_auth_url, exchange_code_for_token, get_authorization_url
+from strava_auth import get_strava_header, exchange_code_for_token, get_authorization_url
 import database
 
 # Set up logging
