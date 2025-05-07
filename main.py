@@ -27,6 +27,9 @@ STRAVA_CLIENT_ID = os.getenv('STRAVA_CLIENT_ID')
 STRAVA_CLIENT_SECRET = os.getenv('STRAVA_CLIENT_SECRET')
 STRAVA_REDIRECT_URI = os.getenv('STRAVA_REDIRECT_URI')
 
+# Log loaded environment variables (excluding secrets)
+logger.info(f"Loaded environment variables - Client ID: {STRAVA_CLIENT_ID}, Redirect URI: {STRAVA_REDIRECT_URI}")
+
 # Global variables
 auth_sessions = {}
 

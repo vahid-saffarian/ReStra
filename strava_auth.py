@@ -25,8 +25,12 @@ logger.info(f"Loaded environment variables - Client ID: {STRAVA_CLIENT_ID}, Redi
 
 def get_strava_auth_url():
     """Generate the Strava OAuth authorization URL for user authentication"""
-    if not all([STRAVA_CLIENT_ID, STRAVA_REDIRECT_URI]):
-        logger.error("Missing required environment variables for Strava auth")
+    if not STRAVA_CLIENT_ID:
+        logger.error("Missing STRAVA_CLIENT_ID environment variable")
+        return None
+        
+    if not STRAVA_REDIRECT_URI:
+        logger.error("Missing STRAVA_REDIRECT_URI environment variable")
         return None
     
     # URL encode the redirect URI
