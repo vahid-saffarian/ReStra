@@ -4,12 +4,20 @@
         {
             "src": "api.py",
             "use": "@vercel/python"
+        },
+        {
+            "src": "oauth_server.py",
+            "use": "@vercel/python"
         }
     ],
     "routes": [
         {
-            "src": "/(.*)",
+            "src": "/webhook",
             "dest": "api.py"
+        },
+        {
+            "src": "/",
+            "dest": "oauth_server.py"
         }
     ],
     "env": {
