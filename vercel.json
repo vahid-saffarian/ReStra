@@ -2,14 +2,14 @@
     "version": 2,
     "builds": [
         {
-            "src": "oauth_server.py",
+            "src": "api.py",
             "use": "@vercel/python"
         }
     ],
     "routes": [
         {
             "src": "/(.*)",
-            "dest": "oauth_server.py"
+            "dest": "api.py"
         }
     ],
     "env": {
