@@ -5,7 +5,8 @@ import logging
 import random
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from strava_auth import get_strava_header
+from strava_auth import get_strava_header, get_strava_auth_url, exchange_code_for_token
+import database
 
 # Set up logging
 logging.basicConfig(
@@ -22,7 +23,12 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+STRAVA_CLIENT_ID = os.getenv('STRAVA_CLIENT_ID')
+STRAVA_CLIENT_SECRET = os.getenv('STRAVA_CLIENT_SECRET')
+STRAVA_REDIRECT_URI = os.getenv('STRAVA_REDIRECT_URI')
+
+# Global variables
+auth_sessions = {}
 
 # List of inspirational messages
 INSPIRATIONAL_MESSAGES = [
@@ -116,15 +122,114 @@ def get_random_signoff():
     """Get a random sign-off message"""
     return random.choice(SIGNOFF_MESSAGES)
 
-def send_telegram_message(message):
+def handle_start(chat_id):
+    """Handle /start command"""
+    message = """
+Welcome to the Strava Kudos Bot! 🏃‍♂️
+
+To get started:
+1. Use /connect to link your Strava account
+2. Once connected, you'll receive kudos for your activities automatically!
+
+Use /help to see all available commands.
+"""
+    send_telegram_message(message, chat_id)
+
+def handle_help(chat_id):
+    """Handle /help command"""
+    message = """
+Available commands:
+/start - Start the bot
+/connect - Connect your Strava account
+/disconnect - Disconnect your Strava account
+/status - Check your connection status
+/help - Show this help message
+"""
+    send_telegram_message(message, chat_id)
+
+def handle_connect(chat_id):
+    """Handle /connect command"""
+    global auth_sessions
+    
+    # Check if bot is properly configured
+    if not STRAVA_CLIENT_ID or not STRAVA_CLIENT_SECRET:
+        message = "❌ Error: Bot is not properly configured. Please contact the bot administrator."
+        send_telegram_message(message, chat_id)
+        return
+        
+    # Generate authorization URL using bot's client ID
+    auth_url = f"https://www.strava.com/oauth/authorize?client_id={STRAVA_CLIENT_ID}&response_type=code&redirect_uri={STRAVA_REDIRECT_URI}&approval_prompt=force&scope=activity:read_all"
+    
+    auth_sessions[chat_id] = {
+        'state': random.randint(100000, 999999),
+        'timestamp': datetime.now()
+    }
+    
+    message = f"""
+To connect your Strava account:
+
+1. Click this link: {auth_url}
+2. Log in to your Strava account
+3. Authorize the bot to access your activities
+4. You'll be redirected to a page with your authorization code
+5. Copy the code and send it back to me
+
+You have 5 minutes to complete this process.
+"""
+    send_telegram_message(message, chat_id)
+
+def handle_disconnect(chat_id):
+    """Handle /disconnect command"""
+    user = database.get_user(chat_id)
+    if user:
+        database.add_user(chat_id, None, None, None)
+        message = "Your Strava account has been disconnected. Use /connect to link a new account."
+    else:
+        message = "You don't have a connected Strava account."
+    send_telegram_message(message, chat_id)
+
+def handle_status(chat_id):
+    """Handle /status command"""
+    user = database.get_user(chat_id)
+    if user and user[1]:  # Check if user has access token
+        message = "✅ Your Strava account is connected!"
+    else:
+        message = "❌ Your Strava account is not connected. Use /connect to link your account."
+    send_telegram_message(message, chat_id)
+
+def handle_auth_code(chat_id, code):
+    """Handle Strava authorization code"""
+    global auth_sessions
+    try:
+        tokens = exchange_code_for_token(code)
+        if tokens:
+            database.add_user(
+                chat_id,
+                tokens['access_token'],
+                tokens['refresh_token'],
+                tokens['expires_at']
+            )
+            # Remove the session after successful authentication
+            if chat_id in auth_sessions:
+                del auth_sessions[chat_id]
+            message = "✅ Your Strava account has been connected successfully!"
+        else:
+            message = "❌ Failed to connect your Strava account. Please try again with /connect."
+    except Exception as e:
+        logger.error(f"Error handling auth code: {str(e)}")
+        message = "❌ An error occurred while connecting your account. Please try again with /connect."
+    
+    send_telegram_message(message, chat_id)
+
+def send_telegram_message(message, chat_id):
     """Send a message to Telegram bot"""
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        logger.error("Telegram credentials not found in .env file")
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error("Telegram bot token not found in .env file")
         return False
         
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     data = {
-        "chat_id": TELEGRAM_CHAT_ID,
+        "chat_id": chat_id,
         "text": message,
         "parse_mode": "HTML"
     }
@@ -189,56 +294,106 @@ def get_activity_emoji(activity_type):
     }
     return emoji_map.get(activity_type, '🏃')  # Default to running emoji if type not found
 
-def main():
+def process_activities_for_user(chat_id):
+    """Process activities for a specific user"""
     try:
-        logger.info("Starting Strava Kudos Bot...")
-        
-        # Get fresh headers with access token
-        headers = get_strava_header()
-        if not headers:
-            error_msg = "❌ Failed to get authorization. Exiting..."
-            logger.error(error_msg)
-            send_telegram_message(error_msg)
+        user = database.get_user(chat_id)
+        if not user or not user[1]:  # No access token
             return
             
-        access_token = headers["Authorization"].split(" ")[1]
-        
+        access_token = user[1]
+        if datetime.now().timestamp() >= user[3]:  # Token expired
+            # TODO: Implement token refresh
+            return
+            
         twelve_hours_ago = datetime.now() - timedelta(hours=12)
         after_ts = int(twelve_hours_ago.timestamp())
-
+        
         activities = get_activities(access_token, after_ts)
         if not activities:
-            error_msg = get_random_inspiration()
-            logger.info(error_msg)
-            send_telegram_message(error_msg)
             return
             
-        logger.info(f"Found {len(activities)} activities since {twelve_hours_ago.isoformat()} UTC")
-        send_telegram_message(get_random_greeting())
+        send_telegram_message(get_random_greeting(), chat_id)
+        
         for activity in activities:
             activity_name = activity.get('name', 'Unnamed')
             activity_id = activity.get('id')
             activity_type = activity.get('type', 'Unknown')
-            distance = round(activity.get('distance', 0) / 1000, 2)
             duration = round(activity.get('moving_time', 0) / 60, 2)
             
             emoji = get_activity_emoji(activity_type)
             cheer = get_random_cheer().format(name=activity_name)
-                
+            
             message = f"""
 {emoji} <b>{cheer}</b>
 {duration} minutes well spent!
 """
-            logger.info(f"Found activity: {activity_name} ({activity_id})")
-            send_telegram_message(message)
-                
-        logger.info("Bot finished processing activities")
-        send_telegram_message(get_random_signoff())
+            send_telegram_message(message, chat_id)
+            
+        send_telegram_message(get_random_signoff(), chat_id)
         
     except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
-        logger.error(error_msg)
-        send_telegram_message(f"❌ {error_msg}")
+        logger.error(f"Error processing activities for user {chat_id}: {str(e)}")
+
+def main():
+    """Main function to handle Telegram updates"""
+    global auth_sessions
+    try:
+        logger.info("Starting Strava Kudos Bot...")
+        
+        # Get the last update ID
+        last_update_id = 0
+        
+        while True:
+            # Get updates from Telegram
+            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+            params = {
+                "offset": last_update_id + 1,
+                "timeout": 30
+            }
+            
+            response = requests.get(url, params=params)
+            updates = response.json().get("result", [])
+            
+            for update in updates:
+                last_update_id = update["update_id"]
+                
+                if "message" in update:
+                    message = update["message"]
+                    chat_id = str(message["chat"]["id"])
+                    text = message.get("text", "")
+                    
+                    # Handle commands
+                    if text.startswith("/"):
+                        command = text.split()[0].lower()
+                        if command == "/start":
+                            handle_start(chat_id)
+                        elif command == "/help":
+                            handle_help(chat_id)
+                        elif command == "/connect":
+                            handle_connect(chat_id)
+                        elif command == "/disconnect":
+                            handle_disconnect(chat_id)
+                        elif command == "/status":
+                            handle_status(chat_id)
+                    # Handle auth code
+                    elif chat_id in auth_sessions:
+                        handle_auth_code(chat_id, text)
+            
+            # Process activities for all users
+            for chat_id in database.get_all_users():
+                process_activities_for_user(chat_id)
+                
+            # Clean up expired auth sessions
+            current_time = datetime.now()
+            auth_sessions = {
+                chat_id: session for chat_id, session in auth_sessions.items()
+                if (current_time - session['timestamp']).total_seconds() < 300  # 5 minutes
+            }
+            
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        time.sleep(5)  # Wait before retrying
 
 if __name__ == "__main__":
     main()

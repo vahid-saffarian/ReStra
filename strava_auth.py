@@ -1,52 +1,88 @@
-import requests
 import os
+import requests
+import logging
+from datetime import datetime
 from dotenv import load_dotenv
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
 
-CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
-CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
-REFRESH_TOKEN = os.getenv("STRAVA_REFRESH_TOKEN")
+# Bot's Strava API credentials (only used for OAuth flow)
+STRAVA_CLIENT_ID = os.getenv('STRAVA_CLIENT_ID')
+STRAVA_CLIENT_SECRET = os.getenv('STRAVA_CLIENT_SECRET')
+STRAVA_REDIRECT_URI = os.getenv('STRAVA_REDIRECT_URI')
 
-def refresh_access_token():
+def get_strava_auth_url():
+    """Generate the Strava OAuth authorization URL for user authentication"""
+    if not all([STRAVA_CLIENT_ID, STRAVA_REDIRECT_URI]):
+        logger.error("Missing required environment variables for Strava auth")
+        return None
+        
+    return f"https://www.strava.com/oauth/authorize?client_id={STRAVA_CLIENT_ID}&response_type=code&redirect_uri={STRAVA_REDIRECT_URI}&approval_prompt=force&scope=activity:read_all"
+
+def exchange_code_for_token(code):
+    """Exchange user's authorization code for their access token"""
+    if not all([STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, STRAVA_REDIRECT_URI, code]):
+        logger.error("Missing required parameters for token exchange")
+        return None
+        
     try:
-        print("Attempting to refresh access token...")
-        print(f"Using Client ID: {CLIENT_ID}")
-        print(f"Using Refresh Token: {REFRESH_TOKEN[:5]}...")  # Only print first 5 chars for security
+        # Log the request parameters (excluding client secret for security)
+        logger.info(f"Attempting token exchange with client_id={STRAVA_CLIENT_ID}, redirect_uri={STRAVA_REDIRECT_URI}")
         
         response = requests.post(
-            "https://www.strava.com/oauth/token",
+            'https://www.strava.com/oauth/token',
             data={
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
-                "grant_type": "refresh_token",
-                "refresh_token": REFRESH_TOKEN,
-            },
+                'client_id': STRAVA_CLIENT_ID,
+                'client_secret': STRAVA_CLIENT_SECRET,
+                'code': code,
+                'grant_type': 'authorization_code',
+                'redirect_uri': STRAVA_REDIRECT_URI
+            }
         )
         
-        if response.status_code == 400:
-            print("❌ Bad Request - Your refresh token might be invalid or expired")
-            print("Please get a new refresh token from Strava")
-            return None
+        # If the request fails, log the response content
+        if not response.ok:
+            logger.error(f"Token exchange failed with status {response.status_code}")
+            logger.error(f"Response content: {response.text}")
+            response.raise_for_status()
             
-        response.raise_for_status()
-        tokens = response.json()
-        print("✅ Access token refreshed successfully")
-        return tokens["access_token"]
-        
+        return response.json()
     except requests.exceptions.RequestException as e:
-        print(f"❌ Error refreshing token: {str(e)}")
+        logger.error(f"Error exchanging code for token: {str(e)}")
         return None
 
-def get_strava_header():
-    """
-    Returns the authorization header for Strava API requests
-    """
-    access_token = refresh_access_token()
-    if not access_token:
-        print("❌ Failed to get access token")
+def refresh_access_token(refresh_token):
+    """Refresh user's expired access token"""
+    if not all([STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, refresh_token]):
+        logger.error("Missing required parameters for token refresh")
         return None
+        
+    try:
+        response = requests.post(
+            'https://www.strava.com/oauth/token',
+            data={
+                'client_id': STRAVA_CLIENT_ID,
+                'client_secret': STRAVA_CLIENT_SECRET,
+                'refresh_token': refresh_token,
+                'grant_type': 'refresh_token'
+            }
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error refreshing token: {str(e)}")
+        return None
+
+def get_strava_header(access_token):
+    """Return the authorization header for Strava API requests using user's token"""
     return {"Authorization": f"Bearer {access_token}"}
 
 # Test the connection
