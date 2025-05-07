@@ -163,7 +163,7 @@ def handle_connect(chat_id):
         send_telegram_message(message, chat_id)
         return
         
-    # Generate authorization URL using the function from strava_auth.py
+    # Generate authorization URL using the function from strava_auth.py 
     auth_url = get_strava_auth_url()
     if not auth_url:
         message = "❌ Error: Could not generate authorization URL. Please try again later."
