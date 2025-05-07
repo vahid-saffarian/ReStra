@@ -2,7 +2,8 @@ from flask import Flask, request, jsonify
 import os
 import logging
 from dotenv import load_dotenv
-import telegram
+from telegram import Bot
+from telegram.ext import Application
 from main import handle_auth_code, handle_connect, handle_disconnect, handle_status, handle_help
 
 # Set up logging
@@ -19,7 +20,8 @@ load_dotenv()
 app = Flask(__name__)
 
 # Initialize bot
-bot = telegram.Bot(token=os.getenv('TELEGRAM_BOT_TOKEN'))
+bot = Bot(token=os.getenv('TELEGRAM_BOT_TOKEN'))
+application = Application.builder().token(os.getenv('TELEGRAM_BOT_TOKEN')).build()
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
