@@ -23,58 +23,59 @@ STRAVA_REDIRECT_URI = os.getenv('STRAVA_REDIRECT_URI')
 # Log the loaded environment variables (excluding secret)
 logger.info(f"Loaded environment variables - Client ID: {STRAVA_CLIENT_ID}, Redirect URI: {STRAVA_REDIRECT_URI}")
 
-def get_strava_auth_url():
-    """Generate the Strava OAuth authorization URL for user authentication"""
-    if not STRAVA_CLIENT_ID:
-        logger.error("Missing STRAVA_CLIENT_ID environment variable")
+def get_authorization_url():
+    """Generate the Strava authorization URL"""
+    try:
+        if not STRAVA_CLIENT_ID or not STRAVA_REDIRECT_URI:
+            logger.error("Missing required environment variables for authorization URL")
+            return None
+
+        auth_url = (
+            f"https://www.strava.com/oauth/authorize"
+            f"?client_id={STRAVA_CLIENT_ID}"
+            f"&response_type=code"
+            f"&redirect_uri={STRAVA_REDIRECT_URI}"
+            f"&approval_prompt=force"
+            f"&scope=read,activity:read"
+        )
+        logger.info(f"Generated authorization URL with redirect URI: {STRAVA_REDIRECT_URI}")
+        return auth_url
+    except Exception as e:
+        logger.error(f"Error generating authorization URL: {str(e)}")
         return None
-        
-    if not STRAVA_REDIRECT_URI:
-        logger.error("Missing STRAVA_REDIRECT_URI environment variable")
-        return None
-    
-    # URL encode the redirect URI
-    encoded_redirect_uri = quote_plus(STRAVA_REDIRECT_URI)
-    auth_url = f"https://www.strava.com/oauth/authorize?client_id={STRAVA_CLIENT_ID}&response_type=code&redirect_uri={encoded_redirect_uri}&approval_prompt=force&scope=activity:read_all"
-    
-    logger.info(f"Generated auth URL with redirect_uri: {STRAVA_REDIRECT_URI}")
-    return auth_url
+
+def get_strava_header(access_token):
+    """Get the header for Strava API requests"""
+    return {"Authorization": f"Bearer {access_token}"}
 
 def exchange_code_for_token(code):
-    """Exchange user's authorization code for their access token"""
-    if not all([STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, STRAVA_REDIRECT_URI, code]):
-        logger.error(f"Missing required parameters for token exchange. Client ID: {bool(STRAVA_CLIENT_ID)}, Secret: {bool(STRAVA_CLIENT_SECRET)}, Redirect URI: {STRAVA_REDIRECT_URI}, Code: {bool(code)}")
-        return None
-        
+    """Exchange the authorization code for access and refresh tokens"""
     try:
-        # Log the request parameters (excluding client secret for security)
-        logger.info(f"Attempting token exchange with client_id={STRAVA_CLIENT_ID}, redirect_uri={STRAVA_REDIRECT_URI}")
-        
-        data = {
-            'client_id': STRAVA_CLIENT_ID,
-            'client_secret': STRAVA_CLIENT_SECRET,
-            'code': code,
-            'grant_type': 'authorization_code',
-            'redirect_uri': STRAVA_REDIRECT_URI
-        }
-        
-        logger.info(f"Token exchange request data: {data}")
-        
+        if not STRAVA_CLIENT_ID or not STRAVA_CLIENT_SECRET or not STRAVA_REDIRECT_URI:
+            logger.error("Missing required environment variables for token exchange")
+            return None
+
         response = requests.post(
-            'https://www.strava.com/oauth/token',
-            data=data
+            "https://www.strava.com/oauth/token",
+            data={
+                "client_id": STRAVA_CLIENT_ID,
+                "client_secret": STRAVA_CLIENT_SECRET,
+                "code": code,
+                "grant_type": "authorization_code"
+            }
         )
+        response.raise_for_status()
+        data = response.json()
         
-        # If the request fails, log the response content
-        if not response.ok:
-            logger.error(f"Token exchange failed with status {response.status_code}")
-            logger.error(f"Response content: {response.text}")
-            response.raise_for_status()
-            
-        token_data = response.json()
-        logger.info("Successfully exchanged code for token")
-        return token_data
-    except requests.exceptions.RequestException as e:
+        # Calculate token expiration
+        expires_at = datetime.now().timestamp() + data.get('expires_in', 21600)
+        
+        return {
+            'access_token': data.get('access_token'),
+            'refresh_token': data.get('refresh_token'),
+            'expires_at': expires_at
+        }
+    except Exception as e:
         logger.error(f"Error exchanging code for token: {str(e)}")
         return None
 
@@ -99,10 +100,6 @@ def refresh_access_token(refresh_token):
     except requests.exceptions.RequestException as e:
         logger.error(f"Error refreshing token: {str(e)}")
         return None
-
-def get_strava_header(access_token):
-    """Return the authorization header for Strava API requests using user's token"""
-    return {"Authorization": f"Bearer {access_token}"}
 
 # Test the connection
 if __name__ == "__main__":
