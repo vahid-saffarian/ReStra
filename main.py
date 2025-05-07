@@ -151,10 +151,9 @@ Available commands:
 
 def handle_connect(chat_id):
     """Handle /connect command"""
-    global auth_sessions
-    
     # Check if user already has an active session
-    if chat_id in auth_sessions:
+    session = database.get_auth_session(chat_id)
+    if session:
         message = "You already have an active connection session. Please complete the current authorization process or wait for it to expire."
         send_telegram_message(message, chat_id)
         return
@@ -165,17 +164,17 @@ def handle_connect(chat_id):
         send_telegram_message(message, chat_id)
         return
         
-    # Generate authorization URL using the function from strava_auth.py 
+    # Generate authorization URL using the function from strava_auth.py
     auth_url = get_strava_auth_url()
     if not auth_url:
         message = "❌ Error: Could not generate authorization URL. Please try again later."
         send_telegram_message(message, chat_id)
         return
     
-    auth_sessions[chat_id] = {
-        'state': random.randint(100000, 999999),
-        'timestamp': datetime.now()
-    }
+    # Create new auth session
+    state = random.randint(100000, 999999)
+    timestamp = datetime.now()
+    database.add_auth_session(chat_id, state, timestamp)
     
     message = f"""
 To connect your Strava account:
@@ -221,22 +220,21 @@ def handle_status(chat_id):
 
 def handle_auth_code(chat_id, code):
     """Handle Strava authorization code"""
-    global auth_sessions
     try:
         logger.info(f"Received authorization code for chat_id {chat_id}")
         
         # Check if the session exists
-        if chat_id not in auth_sessions:
+        session = database.get_auth_session(chat_id)
+        if not session:
             logger.error(f"No active session found for chat_id {chat_id}")
             message = "❌ Your authorization session has expired. Please use /connect to start again."
             send_telegram_message(message, chat_id)
             return
             
         # Check if the session has expired
-        session = auth_sessions[chat_id]
         if (datetime.now() - session['timestamp']).total_seconds() > 300:  # 5 minutes
             logger.error(f"Session expired for chat_id {chat_id}")
-            del auth_sessions[chat_id]
+            database.remove_auth_session(chat_id)
             message = "❌ Your authorization session has expired. Please use /connect to start again."
             send_telegram_message(message, chat_id)
             return
@@ -253,8 +251,7 @@ def handle_auth_code(chat_id, code):
                 tokens['expires_at']
             )
             # Remove the session after successful authentication
-            if chat_id in auth_sessions:
-                del auth_sessions[chat_id]
+            database.remove_auth_session(chat_id)
             message = "✅ Your Strava account has been connected successfully!"
         else:
             logger.error(f"Failed to exchange code for token for chat_id {chat_id}")
