@@ -13,8 +13,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('strava_bot.log'),
-        logging.StreamHandler()
+        logging.StreamHandler()  # Only use stdout/stderr
     ]
 )
 logger = logging.getLogger(__name__)

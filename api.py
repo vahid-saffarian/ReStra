@@ -2,7 +2,10 @@ from flask import Flask, request, jsonify
 import os
 import logging
 from dotenv import load_dotenv
-from main import handle_start, handle_help, handle_connect, handle_disconnect, handle_status, handle_auth_code, send_telegram_message
+from main import (
+    handle_start, handle_help, handle_connect, handle_disconnect,
+    handle_status, handle_auth_code, send_telegram_message, auth_sessions
+)
 
 # Set up logging
 logging.basicConfig(
