@@ -3,6 +3,7 @@ import requests
 import logging
 from datetime import datetime
 from dotenv import load_dotenv
+from urllib.parse import quote_plus
 
 # Set up logging
 logging.basicConfig(
@@ -19,13 +20,21 @@ STRAVA_CLIENT_ID = os.getenv('STRAVA_CLIENT_ID')
 STRAVA_CLIENT_SECRET = os.getenv('STRAVA_CLIENT_SECRET')
 STRAVA_REDIRECT_URI = os.getenv('STRAVA_REDIRECT_URI')
 
+# Log the loaded environment variables (excluding secret)
+logger.info(f"Loaded environment variables - Client ID: {STRAVA_CLIENT_ID}, Redirect URI: {STRAVA_REDIRECT_URI}")
+
 def get_strava_auth_url():
     """Generate the Strava OAuth authorization URL for user authentication"""
     if not all([STRAVA_CLIENT_ID, STRAVA_REDIRECT_URI]):
         logger.error("Missing required environment variables for Strava auth")
         return None
-        
-    return f"https://www.strava.com/oauth/authorize?client_id={STRAVA_CLIENT_ID}&response_type=code&redirect_uri={STRAVA_REDIRECT_URI}&approval_prompt=force&scope=activity:read_all"
+    
+    # URL encode the redirect URI
+    encoded_redirect_uri = quote_plus(STRAVA_REDIRECT_URI)
+    auth_url = f"https://www.strava.com/oauth/authorize?client_id={STRAVA_CLIENT_ID}&response_type=code&redirect_uri={encoded_redirect_uri}&approval_prompt=force&scope=activity:read_all"
+    
+    logger.info(f"Generated auth URL with redirect_uri: {STRAVA_REDIRECT_URI}")
+    return auth_url
 
 def exchange_code_for_token(code):
     """Exchange user's authorization code for their access token"""

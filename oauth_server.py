@@ -1,9 +1,20 @@
 from flask import Flask, request, render_template_string
 import os
 from dotenv import load_dotenv
+import logging
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
+
+# Log the loaded environment variables
+logger.info(f"Loaded environment variables - Redirect URI: {os.getenv('STRAVA_REDIRECT_URI')}")
 
 app = Flask(__name__)
 
@@ -87,8 +98,20 @@ SUCCESS_TEMPLATE = """
 @app.route('/')
 def callback():
     code = request.args.get('code')
+    state = request.args.get('state')
+    error = request.args.get('error')
+    
+    logger.info(f"Received callback with code: {code}, state: {state}, error: {error}")
+    
+    if error:
+        logger.error(f"Authorization error: {error}")
+        return f"Authorization error: {error}"
+        
     if code:
+        logger.info("Successfully received authorization code")
         return render_template_string(SUCCESS_TEMPLATE, code=code)
+        
+    logger.error("No authorization code received")
     return "No authorization code received."
 
 # For local development
