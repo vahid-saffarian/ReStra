@@ -157,8 +157,12 @@ def handle_connect(chat_id):
         send_telegram_message(message, chat_id)
         return
         
-    # Generate authorization URL using bot's client ID
-    auth_url = f"https://www.strava.com/oauth/authorize?client_id={STRAVA_CLIENT_ID}&response_type=code&redirect_uri={STRAVA_REDIRECT_URI}&approval_prompt=force&scope=activity:read_all"
+    # Generate authorization URL using the function from strava_auth.py
+    auth_url = get_strava_auth_url()
+    if not auth_url:
+        message = "❌ Error: Could not generate authorization URL. Please try again later."
+        send_telegram_message(message, chat_id)
+        return
     
     auth_sessions[chat_id] = {
         'state': random.randint(100000, 999999),
