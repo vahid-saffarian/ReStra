@@ -22,8 +22,5 @@
     ],
     "env": {
         "FLASK_ENV": "production"
-    },
-    "kv": {
-        "store": "vercel-kv"
     }
 } 
