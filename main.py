@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from strava_auth import get_strava_header, exchange_code_for_token, get_authorization_url
 import database
+import telegram
 
 # Set up logging
 logging.basicConfig(
@@ -124,9 +125,13 @@ def get_random_signoff():
     """Get a random sign-off message"""
     return random.choice(SIGNOFF_MESSAGES)
 
-def handle_start(chat_id):
-    """Handle /start command"""
-    message = """
+def handle_start(bot, update):
+    """Handle the /start command"""
+    try:
+        chat_id = update['message']['chat']['id']
+        logger.info(f"Handling start command for chat_id {chat_id}")
+
+        message = """
 Welcome to the Strava Kudos Bot! 🏃‍♂️
 
 To get started:
@@ -135,19 +140,60 @@ To get started:
 
 Use /help to see all available commands.
 """
-    send_telegram_message(message, chat_id)
+        bot.send_message(
+            chat_id=chat_id,
+            text=message,
+            parse_mode='Markdown'
+        )
+        logger.info(f"Successfully sent start message to user {chat_id}")
 
-def handle_help(chat_id):
-    """Handle /help command"""
-    message = """
-Available commands:
-/start - Start the bot
+    except Exception as e:
+        logger.error(f"Error in handle_start: {str(e)}")
+        if 'bot' in locals() and 'chat_id' in locals():
+            bot.send_message(
+                chat_id=chat_id,
+                text="Sorry, there was an error processing your request. Please try again later."
+            )
+
+def handle_help(bot, update):
+    """Handle the /help command"""
+    try:
+        chat_id = update['message']['chat']['id']
+        logger.info(f"Handling help command for chat_id {chat_id}")
+
+        help_text = """
+🤖 *Strava Kudos Bot Help*
+
+*Available Commands:*
 /connect - Connect your Strava account
 /disconnect - Disconnect your Strava account
 /status - Check your connection status
 /help - Show this help message
+
+*How to Connect:*
+1. Use /connect to start the authorization process
+2. Click the authorization link
+3. Authorize the bot on Strava
+4. Copy the authorization code
+5. Send the code back to the bot
+
+*Need Help?*
+If you encounter any issues, try disconnecting and reconnecting your account using /disconnect and /connect.
 """
-    send_telegram_message(message, chat_id)
+        bot.send_message(
+            chat_id=chat_id,
+            text=help_text,
+            parse_mode='Markdown'
+        )
+        logger.info(f"Successfully sent help message to user {chat_id}")
+
+    except Exception as e:
+        logger.error(f"Error in handle_help: {str(e)}")
+        if 'bot' in locals() and 'chat_id' in locals():
+            bot.send_message(
+                chat_id=chat_id,
+                text="Sorry, there was an error showing the help message. Please try again later."
+            )
 
 def handle_connect(bot, update):
     """Handle the /connect command"""
@@ -472,7 +518,6 @@ def process_activities_for_user(chat_id):
 
 def main():
     """Main function to handle Telegram updates"""
-    global auth_sessions
     try:
         logger.info("Starting Strava Kudos Bot...")
         
@@ -500,24 +545,27 @@ def main():
                     
                     logger.info(f"Received message from chat_id {chat_id}: {text}")
                     
+                    # Create bot instance for this update
+                    bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+                    
                     # Handle commands
                     if text.startswith("/"):
                         command = text.split()[0].lower()
                         logger.info(f"Handling command: {command} for chat_id {chat_id}")
                         if command == "/start":
-                            handle_start(chat_id)
+                            handle_start(bot, update)
                         elif command == "/help":
-                            handle_help(chat_id)
+                            handle_help(bot, update)
                         elif command == "/connect":
-                            handle_connect(chat_id)
+                            handle_connect(bot, update)
                         elif command == "/disconnect":
-                            handle_disconnect(chat_id)
+                            handle_disconnect(bot, update)
                         elif command == "/status":
-                            handle_status(chat_id)
+                            handle_status(bot, update)
                     # Handle auth code
-                    elif chat_id in auth_sessions:
+                    elif database.get_auth_session(chat_id):
                         logger.info(f"Processing auth code for chat_id {chat_id}")
-                        handle_auth_code(chat_id, text)
+                        handle_auth_code(bot, update)
                     else:
                         logger.info(f"Message not handled for chat_id {chat_id}")
             
@@ -526,11 +574,7 @@ def main():
                 process_activities_for_user(chat_id)
                 
             # Clean up expired auth sessions
-            current_time = datetime.now()
-            auth_sessions = {
-                chat_id: session for chat_id, session in auth_sessions.items()
-                if (current_time - session['timestamp']).total_seconds() < 300  # 5 minutes
-            }
+            database.cleanup_expired_sessions()
             
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
