@@ -516,6 +516,43 @@ def process_activities_for_user(chat_id):
     except Exception as e:
         logger.error(f"Error processing activities for user {chat_id}: {str(e)}")
 
+def process_update(update):
+    """Process a single update from either webhook or long polling"""
+    try:
+        if "message" in update:
+            message = update["message"]
+            chat_id = str(message["chat"]["id"])
+            text = message.get("text", "")
+            
+            logger.info(f"Processing message - chat_id: {chat_id}, text: {text}")
+            
+            # Create bot instance for this update
+            bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
+            
+            # Handle commands
+            if text.startswith("/"):
+                command = text.split()[0].lower()
+                logger.info(f"Handling command: {command} for chat_id {chat_id}")
+                if command == "/start":
+                    handle_start(bot, update)
+                elif command == "/help":
+                    handle_help(bot, update)
+                elif command == "/connect":
+                    handle_connect(bot, update)
+                elif command == "/disconnect":
+                    handle_disconnect(bot, update)
+                elif command == "/status":
+                    handle_status(bot, update)
+            # Handle auth code
+            elif database.get_auth_session(chat_id):
+                logger.info(f"Processing auth code for chat_id {chat_id}")
+                handle_auth_code(bot, update)
+            else:
+                logger.info(f"Message not handled for chat_id {chat_id}")
+                
+    except Exception as e:
+        logger.error(f"Error processing update: {str(e)}")
+
 def main():
     """Main function to handle Telegram updates"""
     try:
@@ -525,59 +562,34 @@ def main():
         last_update_id = 0
         
         while True:
-            # Get updates from Telegram
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
-            params = {
-                "offset": last_update_id + 1,
-                "timeout": 30
-            }
-            
-            response = requests.get(url, params=params)
-            updates = response.json().get("result", [])
-            
-            for update in updates:
-                last_update_id = update["update_id"]
+            try:
+                # Get updates from Telegram
+                url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+                params = {
+                    "offset": last_update_id + 1,
+                    "timeout": 30
+                }
                 
-                if "message" in update:
-                    message = update["message"]
-                    chat_id = str(message["chat"]["id"])
-                    text = message.get("text", "")
-                    
-                    logger.info(f"Received message from chat_id {chat_id}: {text}")
-                    
-                    # Create bot instance for this update
-                    bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
-                    
-                    # Handle commands
-                    if text.startswith("/"):
-                        command = text.split()[0].lower()
-                        logger.info(f"Handling command: {command} for chat_id {chat_id}")
-                        if command == "/start":
-                            handle_start(bot, update)
-                        elif command == "/help":
-                            handle_help(bot, update)
-                        elif command == "/connect":
-                            handle_connect(bot, update)
-                        elif command == "/disconnect":
-                            handle_disconnect(bot, update)
-                        elif command == "/status":
-                            handle_status(bot, update)
-                    # Handle auth code
-                    elif database.get_auth_session(chat_id):
-                        logger.info(f"Processing auth code for chat_id {chat_id}")
-                        handle_auth_code(bot, update)
-                    else:
-                        logger.info(f"Message not handled for chat_id {chat_id}")
-            
-            # Process activities for all users
-            for chat_id in database.get_all_users():
-                process_activities_for_user(chat_id)
+                response = requests.get(url, params=params)
+                updates = response.json().get("result", [])
                 
-            # Clean up expired auth sessions
-            database.cleanup_expired_sessions()
-            
+                for update in updates:
+                    last_update_id = update["update_id"]
+                    process_update(update)
+                
+                # Process activities for all users
+                for chat_id in database.get_all_users():
+                    process_activities_for_user(chat_id)
+                    
+                # Clean up expired auth sessions
+                database.cleanup_expired_sessions()
+                
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Error fetching updates: {str(e)}")
+                time.sleep(5)  # Wait before retrying
+                
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
+        logger.error(f"Unexpected error in main loop: {str(e)}")
         time.sleep(5)  # Wait before retrying
 
 if __name__ == "__main__":
