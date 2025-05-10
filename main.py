@@ -3,11 +3,15 @@ import requests
 import time
 import logging
 import random
+import tracemalloc
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from strava_auth import get_strava_header, exchange_code_for_token, get_authorization_url
 import database
 import telegram
+
+# Enable tracemalloc
+tracemalloc.start()
 
 # Set up logging
 logging.basicConfig(

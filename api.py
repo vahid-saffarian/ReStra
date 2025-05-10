@@ -1,6 +1,10 @@
 from flask import Flask, request, jsonify
 import logging
+import tracemalloc
 from main import process_update
+
+# Enable tracemalloc
+tracemalloc.start()
 
 # Set up logging
 logging.basicConfig(
