@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import logging
 import tracemalloc
+import asyncio
 from main import process_update
 
 # Enable tracemalloc
@@ -25,8 +26,8 @@ def webhook():
         update = request.get_json()
         logger.info(f"Received webhook update: {update}")
         
-        # Process the update
-        process_update(update)
+        # Process the update asynchronously
+        asyncio.run(process_update(update))
         
         return jsonify({"status": "ok"})
     except Exception as e:

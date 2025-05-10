@@ -4,6 +4,7 @@ import time
 import logging
 import random
 import tracemalloc
+import asyncio
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from strava_auth import get_strava_header, exchange_code_for_token, get_authorization_url
@@ -129,7 +130,7 @@ def get_random_signoff():
     """Get a random sign-off message"""
     return random.choice(SIGNOFF_MESSAGES)
 
-def handle_start(bot, update):
+async def handle_start(bot, update):
     """Handle the /start command"""
     try:
         chat_id = update['message']['chat']['id']
@@ -144,7 +145,7 @@ To get started:
 
 Use /help to see all available commands.
 """
-        bot.send_message(
+        await bot.send_message(
             chat_id=chat_id,
             text=message,
             parse_mode='Markdown'
@@ -154,12 +155,12 @@ Use /help to see all available commands.
     except Exception as e:
         logger.error(f"Error in handle_start: {str(e)}")
         if 'bot' in locals() and 'chat_id' in locals():
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="Sorry, there was an error processing your request. Please try again later."
             )
 
-def handle_help(bot, update):
+async def handle_help(bot, update):
     """Handle the /help command"""
     try:
         chat_id = update['message']['chat']['id']
@@ -184,7 +185,7 @@ def handle_help(bot, update):
 *Need Help?*
 If you encounter any issues, try disconnecting and reconnecting your account using /disconnect and /connect.
 """
-        bot.send_message(
+        await bot.send_message(
             chat_id=chat_id,
             text=help_text,
             parse_mode='Markdown'
@@ -194,12 +195,12 @@ If you encounter any issues, try disconnecting and reconnecting your account usi
     except Exception as e:
         logger.error(f"Error in handle_help: {str(e)}")
         if 'bot' in locals() and 'chat_id' in locals():
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="Sorry, there was an error showing the help message. Please try again later."
             )
 
-def handle_connect(bot, update):
+async def handle_connect(bot, update):
     """Handle the /connect command"""
     try:
         chat_id = update['message']['chat']['id']
@@ -209,7 +210,7 @@ def handle_connect(bot, update):
         session = database.get_auth_session(chat_id)
         if session:
             logger.info(f"User {chat_id} has an active session")
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="You already have an active authorization session. Please complete the current authorization process or wait for it to expire."
             )
@@ -219,7 +220,7 @@ def handle_connect(bot, update):
         user = database.get_user(chat_id)
         if user:
             logger.info(f"User {chat_id} is already connected")
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="You are already connected to Strava. Use /disconnect to remove the connection first."
             )
@@ -229,7 +230,7 @@ def handle_connect(bot, update):
         auth_url = get_authorization_url()
         if not auth_url:
             logger.error("Failed to generate authorization URL")
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="Sorry, there was an error generating the authorization URL. Please try again later."
             )
@@ -240,14 +241,14 @@ def handle_connect(bot, update):
         timestamp = datetime.now()
         if not database.add_auth_session(chat_id, state, timestamp):
             logger.error(f"Failed to create auth session for {chat_id}")
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="Sorry, there was an error creating your authorization session. Please try again later."
             )
             return
 
         # Send authorization URL to user
-        bot.send_message(
+        await bot.send_message(
             chat_id=chat_id,
             text=f"Please click the link below to authorize the bot to access your Strava account:\n\n{auth_url}\n\nAfter authorizing, you'll be redirected to a page with an authorization code. Copy that code and send it back to me."
         )
@@ -256,12 +257,12 @@ def handle_connect(bot, update):
     except Exception as e:
         logger.error(f"Error in handle_connect: {str(e)}")
         if 'bot' in locals() and 'chat_id' in locals():
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="Sorry, there was an error processing your request. Please try again later."
             )
 
-def handle_disconnect(bot, update):
+async def handle_disconnect(bot, update):
     """Handle the /disconnect command"""
     try:
         chat_id = update['message']['chat']['id']
@@ -271,7 +272,7 @@ def handle_disconnect(bot, update):
         user = database.get_user(chat_id)
         if not user:
             logger.info(f"User {chat_id} is not connected")
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="You are not connected to Strava. Use /connect to connect your account."
             )
@@ -280,14 +281,14 @@ def handle_disconnect(bot, update):
         # Remove user data
         if not database.remove_user(chat_id):
             logger.error(f"Failed to remove user data for {chat_id}")
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="Sorry, there was an error disconnecting your account. Please try again later."
             )
             return
 
         # Send success message
-        bot.send_message(
+        await bot.send_message(
             chat_id=chat_id,
             text="✅ Successfully disconnected from Strava. Use /connect to connect your account again."
         )
@@ -296,12 +297,12 @@ def handle_disconnect(bot, update):
     except Exception as e:
         logger.error(f"Error in handle_disconnect: {str(e)}")
         if 'bot' in locals() and 'chat_id' in locals():
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="Sorry, there was an error processing your request. Please try again later."
             )
 
-def handle_status(bot, update):
+async def handle_status(bot, update):
     """Handle the /status command"""
     try:
         chat_id = update['message']['chat']['id']
@@ -311,7 +312,7 @@ def handle_status(bot, update):
         user = database.get_user(chat_id)
         if not user:
             logger.info(f"User {chat_id} is not connected")
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="You are not connected to Strava. Use /connect to connect your account."
             )
@@ -321,14 +322,14 @@ def handle_status(bot, update):
         expires_at = datetime.fromisoformat(user['expires_at'])
         if datetime.now() >= expires_at:
             logger.info(f"Token expired for user {chat_id}")
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="Your Strava connection has expired. Use /connect to reconnect your account."
             )
             return
 
         # Send status message
-        bot.send_message(
+        await bot.send_message(
             chat_id=chat_id,
             text="✅ Your Strava account is connected and active."
         )
@@ -337,12 +338,12 @@ def handle_status(bot, update):
     except Exception as e:
         logger.error(f"Error in handle_status: {str(e)}")
         if 'bot' in locals() and 'chat_id' in locals():
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="Sorry, there was an error checking your status. Please try again later."
             )
 
-def handle_auth_code(bot, update):
+async def handle_auth_code(bot, update):
     """Handle the authorization code from the user"""
     try:
         chat_id = update['message']['chat']['id']
@@ -353,7 +354,7 @@ def handle_auth_code(bot, update):
         session = database.get_auth_session(chat_id)
         if not session:
             logger.info(f"No active session found for {chat_id}")
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="No active authorization session found. Please use /connect to start the authorization process."
             )
@@ -363,7 +364,7 @@ def handle_auth_code(bot, update):
         if datetime.now() - session['timestamp'] > timedelta(minutes=5):
             logger.info(f"Session expired for {chat_id}")
             database.remove_auth_session(chat_id)
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="Your authorization session has expired. Please use /connect to start a new session."
             )
@@ -373,7 +374,7 @@ def handle_auth_code(bot, update):
         tokens = exchange_code_for_token(code)
         if not tokens:
             logger.error(f"Failed to exchange code for tokens for {chat_id}")
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="Sorry, there was an error exchanging the authorization code. Please try again with /connect."
             )
@@ -382,7 +383,7 @@ def handle_auth_code(bot, update):
         # Store user data
         if not database.add_user(chat_id, tokens['access_token'], tokens['refresh_token'], tokens['expires_at']):
             logger.error(f"Failed to store user data for {chat_id}")
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="Sorry, there was an error storing your connection. Please try again with /connect."
             )
@@ -392,7 +393,7 @@ def handle_auth_code(bot, update):
         database.remove_auth_session(chat_id)
 
         # Send success message
-        bot.send_message(
+        await bot.send_message(
             chat_id=chat_id,
             text="✅ Successfully connected to Strava! You can now use the bot to interact with your Strava account."
         )
@@ -401,7 +402,7 @@ def handle_auth_code(bot, update):
     except Exception as e:
         logger.error(f"Error in handle_auth_code: {str(e)}")
         if 'bot' in locals() and 'chat_id' in locals():
-            bot.send_message(
+            await bot.send_message(
                 chat_id=chat_id,
                 text="Sorry, there was an error processing your authorization code. Please try again with /connect."
             )
@@ -520,8 +521,8 @@ def process_activities_for_user(chat_id):
     except Exception as e:
         logger.error(f"Error processing activities for user {chat_id}: {str(e)}")
 
-def process_update(update):
-    """Process a single update from either webhook or long polling"""
+async def process_update(update):
+    """Process a single update from webhook"""
     try:
         if "message" in update:
             message = update["message"]
@@ -538,63 +539,21 @@ def process_update(update):
                 command = text.split()[0].lower()
                 logger.info(f"Handling command: {command} for chat_id {chat_id}")
                 if command == "/start":
-                    handle_start(bot, update)
+                    await handle_start(bot, update)
                 elif command == "/help":
-                    handle_help(bot, update)
+                    await handle_help(bot, update)
                 elif command == "/connect":
-                    handle_connect(bot, update)
+                    await handle_connect(bot, update)
                 elif command == "/disconnect":
-                    handle_disconnect(bot, update)
+                    await handle_disconnect(bot, update)
                 elif command == "/status":
-                    handle_status(bot, update)
+                    await handle_status(bot, update)
             # Handle auth code
             elif database.get_auth_session(chat_id):
                 logger.info(f"Processing auth code for chat_id {chat_id}")
-                handle_auth_code(bot, update)
+                await handle_auth_code(bot, update)
             else:
                 logger.info(f"Message not handled for chat_id {chat_id}")
                 
     except Exception as e:
         logger.error(f"Error processing update: {str(e)}")
-
-def main():
-    """Main function to handle Telegram updates"""
-    try:
-        logger.info("Starting Strava Kudos Bot...")
-        
-        # Get the last update ID
-        last_update_id = 0
-        
-        while True:
-            try:
-                # Get updates from Telegram
-                url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
-                params = {
-                    "offset": last_update_id + 1,
-                    "timeout": 30
-                }
-                
-                response = requests.get(url, params=params)
-                updates = response.json().get("result", [])
-                
-                for update in updates:
-                    last_update_id = update["update_id"]
-                    process_update(update)
-                
-                # Process activities for all users
-                for chat_id in database.get_all_users():
-                    process_activities_for_user(chat_id)
-                    
-                # Clean up expired auth sessions
-                database.cleanup_expired_sessions()
-                
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Error fetching updates: {str(e)}")
-                time.sleep(5)  # Wait before retrying
-                
-    except Exception as e:
-        logger.error(f"Unexpected error in main loop: {str(e)}")
-        time.sleep(5)  # Wait before retrying
-
-if __name__ == "__main__":
-    main()
