@@ -10,9 +10,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# In-memory storage
+# In-memory storage for users
 users = {}
-auth_sessions = {}
+
+# File path for auth sessions
+AUTH_SESSIONS_FILE = '/tmp/auth_sessions.json'
+
+def _load_auth_sessions():
+    """Load auth sessions from file"""
+    try:
+        if os.path.exists(AUTH_SESSIONS_FILE):
+            with open(AUTH_SESSIONS_FILE, 'r') as f:
+                return json.load(f)
+        return {}
+    except Exception as e:
+        logger.error(f"Error loading auth sessions: {str(e)}")
+        return {}
+
+def _save_auth_sessions(sessions):
+    """Save auth sessions to file"""
+    try:
+        with open(AUTH_SESSIONS_FILE, 'w') as f:
+            json.dump(sessions, f)
+    except Exception as e:
+        logger.error(f"Error saving auth sessions: {str(e)}")
 
 def add_user(chat_id, access_token, refresh_token, expires_at):
     """Add a user to the in-memory storage"""
@@ -53,12 +74,14 @@ def get_all_users():
         return []
 
 def add_auth_session(chat_id, state, timestamp):
-    """Add an auth session to the in-memory storage"""
+    """Add an auth session to storage"""
     try:
-        auth_sessions[chat_id] = {
+        sessions = _load_auth_sessions()
+        sessions[str(chat_id)] = {
             'state': state,
-            'timestamp': timestamp.isoformat()  # Convert datetime to ISO format string
+            'timestamp': timestamp.isoformat()
         }
+        _save_auth_sessions(sessions)
         logger.info(f"Added auth session for {chat_id}")
         return True
     except Exception as e:
@@ -66,9 +89,10 @@ def add_auth_session(chat_id, state, timestamp):
         return False
 
 def get_auth_session(chat_id):
-    """Get an auth session from the in-memory storage"""
+    """Get an auth session from storage"""
     try:
-        session = auth_sessions.get(chat_id)
+        sessions = _load_auth_sessions()
+        session = sessions.get(str(chat_id))
         if session:
             # Convert ISO format string back to datetime
             session['timestamp'] = datetime.fromisoformat(session['timestamp'])
@@ -78,10 +102,12 @@ def get_auth_session(chat_id):
         return None
 
 def remove_auth_session(chat_id):
-    """Remove an auth session from the in-memory storage"""
+    """Remove an auth session from storage"""
     try:
-        if chat_id in auth_sessions:
-            del auth_sessions[chat_id]
+        sessions = _load_auth_sessions()
+        if str(chat_id) in sessions:
+            del sessions[str(chat_id)]
+            _save_auth_sessions(sessions)
             logger.info(f"Removed auth session for {chat_id}")
             return True
         return False
@@ -92,13 +118,15 @@ def remove_auth_session(chat_id):
 def cleanup_expired_sessions():
     """Remove expired auth sessions"""
     try:
+        sessions = _load_auth_sessions()
         current_time = datetime.now()
         expired_sessions = [
-            chat_id for chat_id, session in auth_sessions.items()
+            chat_id for chat_id, session in sessions.items()
             if (current_time - datetime.fromisoformat(session['timestamp'])).total_seconds() > 300  # 5 minutes
         ]
         for chat_id in expired_sessions:
-            remove_auth_session(chat_id)
+            del sessions[chat_id]
+        _save_auth_sessions(sessions)
         logger.info(f"Cleaned up {len(expired_sessions)} expired sessions")
     except Exception as e:
         logger.error(f"Error cleaning up expired sessions: {str(e)}") 
