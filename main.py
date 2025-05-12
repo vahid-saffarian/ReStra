@@ -422,8 +422,8 @@ def send_telegram_message(message, chat_id):
         "parse_mode": "HTML"
     }
     try:
-        response = requests.post(url, data=data)
-        response.raise_for_status()
+    response = requests.post(url, data=data)
+    response.raise_for_status()
         return True
     except requests.exceptions.RequestException as e:
         logger.error(f"Error sending Telegram message: {str(e)}")
@@ -519,7 +519,7 @@ def process_activities_for_user(chat_id):
             send_telegram_message(message, chat_id)
             
         send_telegram_message(get_random_signoff(), chat_id)
-        
+
     except Exception as e:
         logger.error(f"Error processing activities for user {chat_id}: {str(e)}")
 

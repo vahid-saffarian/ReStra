@@ -2,6 +2,7 @@ import os
 import json
 import logging
 from datetime import datetime, timedelta
+import redis
 
 # Set up logging
 logging.basicConfig(
@@ -10,78 +11,74 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# In-memory storage for users
-users = {}
+# Initialize Redis client
+redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+redis_client = redis.from_url(redis_url)
 
-# File path for auth sessions
-AUTH_SESSIONS_FILE = '/tmp/auth_sessions.json'
-
-def _load_auth_sessions():
-    """Load auth sessions from file"""
-    try:
-        if os.path.exists(AUTH_SESSIONS_FILE):
-            with open(AUTH_SESSIONS_FILE, 'r') as f:
-                return json.load(f)
-        return {}
-    except Exception as e:
-        logger.error(f"Error loading auth sessions: {str(e)}")
-        return {}
-
-def _save_auth_sessions(sessions):
-    """Save auth sessions to file"""
-    try:
-        with open(AUTH_SESSIONS_FILE, 'w') as f:
-            json.dump(sessions, f)
-    except Exception as e:
-        logger.error(f"Error saving auth sessions: {str(e)}")
+# Key prefixes
+USER_KEY_PREFIX = 'user:'
+AUTH_SESSION_KEY_PREFIX = 'auth_session:'
 
 def add_user(chat_id, access_token, refresh_token, expires_at):
-    """Add a user to the in-memory storage"""
+    """Add a user to Redis"""
     try:
-        users[chat_id] = (chat_id, access_token, refresh_token, expires_at)
-        logger.info(f"Added user {chat_id} to storage")
+        user_data = {
+            'access_token': access_token,
+            'refresh_token': refresh_token,
+            'expires_at': expires_at.isoformat()
+        }
+        redis_client.hmset(f"{USER_KEY_PREFIX}{chat_id}", user_data)
+        logger.info(f"Added user {chat_id} to Redis")
         return True
     except Exception as e:
         logger.error(f"Error adding user {chat_id}: {str(e)}")
         return False
 
 def get_user(chat_id):
-    """Get a user from the in-memory storage"""
+    """Get a user from Redis"""
     try:
-        return users.get(chat_id)
+        user_data = redis_client.hgetall(f"{USER_KEY_PREFIX}{chat_id}")
+        if user_data:
+            return {
+                'chat_id': chat_id,
+                'access_token': user_data[b'access_token'].decode('utf-8'),
+                'refresh_token': user_data[b'refresh_token'].decode('utf-8'),
+                'expires_at': datetime.fromisoformat(user_data[b'expires_at'].decode('utf-8'))
+            }
+        return None
     except Exception as e:
         logger.error(f"Error getting user {chat_id}: {str(e)}")
         return None
 
 def remove_user(chat_id):
-    """Remove a user from the in-memory storage"""
+    """Remove a user from Redis"""
     try:
-        if chat_id in users:
-            del users[chat_id]
-            logger.info(f"Removed user {chat_id} from storage")
-            return True
-        return False
+        redis_client.delete(f"{USER_KEY_PREFIX}{chat_id}")
+        logger.info(f"Removed user {chat_id} from Redis")
+        return True
     except Exception as e:
         logger.error(f"Error removing user {chat_id}: {str(e)}")
         return False
 
 def get_all_users():
-    """Get all user chat IDs"""
+    """Get all user chat IDs from Redis"""
     try:
-        return list(users.keys())
+        keys = redis_client.keys(f"{USER_KEY_PREFIX}*")
+        return [key.decode('utf-8').replace(USER_KEY_PREFIX, '') for key in keys]
     except Exception as e:
         logger.error(f"Error getting all users: {str(e)}")
         return []
 
 def add_auth_session(chat_id, state, timestamp):
-    """Add an auth session to storage"""
+    """Add an auth session to Redis"""
     try:
-        sessions = _load_auth_sessions()
-        sessions[str(chat_id)] = {
+        session_data = {
             'state': state,
             'timestamp': timestamp.isoformat()
         }
-        _save_auth_sessions(sessions)
+        redis_client.hmset(f"{AUTH_SESSION_KEY_PREFIX}{chat_id}", session_data)
+        # Set expiration for 5 minutes
+        redis_client.expire(f"{AUTH_SESSION_KEY_PREFIX}{chat_id}", 300)
         logger.info(f"Added auth session for {chat_id}")
         return True
     except Exception as e:
@@ -89,44 +86,29 @@ def add_auth_session(chat_id, state, timestamp):
         return False
 
 def get_auth_session(chat_id):
-    """Get an auth session from storage"""
+    """Get an auth session from Redis"""
     try:
-        sessions = _load_auth_sessions()
-        session = sessions.get(str(chat_id))
-        if session:
-            # Convert ISO format string back to datetime
-            session['timestamp'] = datetime.fromisoformat(session['timestamp'])
-        return session
+        session_data = redis_client.hgetall(f"{AUTH_SESSION_KEY_PREFIX}{chat_id}")
+        if session_data:
+            return {
+                'state': session_data[b'state'].decode('utf-8'),
+                'timestamp': datetime.fromisoformat(session_data[b'timestamp'].decode('utf-8'))
+            }
+        return None
     except Exception as e:
         logger.error(f"Error getting auth session for {chat_id}: {str(e)}")
         return None
 
 def remove_auth_session(chat_id):
-    """Remove an auth session from storage"""
+    """Remove an auth session from Redis"""
     try:
-        sessions = _load_auth_sessions()
-        if str(chat_id) in sessions:
-            del sessions[str(chat_id)]
-            _save_auth_sessions(sessions)
-            logger.info(f"Removed auth session for {chat_id}")
-            return True
-        return False
+        redis_client.delete(f"{AUTH_SESSION_KEY_PREFIX}{chat_id}")
+        logger.info(f"Removed auth session for {chat_id}")
+        return True
     except Exception as e:
         logger.error(f"Error removing auth session for {chat_id}: {str(e)}")
         return False
 
 def cleanup_expired_sessions():
-    """Remove expired auth sessions"""
-    try:
-        sessions = _load_auth_sessions()
-        current_time = datetime.now()
-        expired_sessions = [
-            chat_id for chat_id, session in sessions.items()
-            if (current_time - datetime.fromisoformat(session['timestamp'])).total_seconds() > 300  # 5 minutes
-        ]
-        for chat_id in expired_sessions:
-            del sessions[chat_id]
-        _save_auth_sessions(sessions)
-        logger.info(f"Cleaned up {len(expired_sessions)} expired sessions")
-    except Exception as e:
-        logger.error(f"Error cleaning up expired sessions: {str(e)}") 
+    """Cleanup is handled automatically by Redis TTL"""
+    pass 
