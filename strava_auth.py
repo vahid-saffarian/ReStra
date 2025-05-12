@@ -68,12 +68,16 @@ def exchange_code_for_token(code):
         data = response.json()
         
         # Calculate token expiration
-        expires_at = datetime.now().timestamp() + data.get('expires_in', 21600)
+        expires_in = data.get('expires_in', 21600) # Default to 6 hours
+        expires_at_timestamp = datetime.now().timestamp() + expires_in
+        expires_at_datetime = datetime.fromtimestamp(expires_at_timestamp)
+        
+        logger.info(f"Token expires at: {expires_at_datetime}")
         
         return {
             'access_token': data.get('access_token'),
             'refresh_token': data.get('refresh_token'),
-            'expires_at': expires_at
+            'expires_at': expires_at_datetime # Return datetime object
         }
     except Exception as e:
         logger.error(f"Error exchanging code for token: {str(e)}")

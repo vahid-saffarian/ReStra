@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 # Initialize Redis client
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
 logger.info(f"Initializing Redis client with URL: {redis_url}")
-redis_client = redis.from_url(redis_url)
+# Use decode_responses=True to automatically decode Redis responses
+redis_client = redis.from_url(redis_url, decode_responses=True)
 
 # Test Redis connection
 try:
@@ -54,9 +55,9 @@ def get_user(chat_id):
             logger.info(f"Found user data for {chat_id}")
             return {
                 'chat_id': chat_id,
-                'access_token': user_data[b'access_token'].decode('utf-8'),
-                'refresh_token': user_data[b'refresh_token'].decode('utf-8'),
-                'expires_at': datetime.fromisoformat(user_data[b'expires_at'].decode('utf-8'))
+                'access_token': user_data['access_token'],
+                'refresh_token': user_data['refresh_token'],
+                'expires_at': datetime.fromisoformat(user_data['expires_at'])
             }
         logger.info(f"No user data found for {chat_id}")
         return None
@@ -116,8 +117,8 @@ def get_auth_session(chat_id):
         if session_data:
             logger.info(f"Found auth session for {chat_id}")
             return {
-                'state': session_data[b'state'].decode('utf-8'),
-                'timestamp': datetime.fromisoformat(session_data[b'timestamp'].decode('utf-8'))
+                'state': session_data['state'],
+                'timestamp': datetime.fromisoformat(session_data['timestamp'])
             }
         logger.info(f"No auth session found for {chat_id}")
         return None
