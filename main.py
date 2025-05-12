@@ -209,7 +209,7 @@ async def handle_connect(bot, update):
         # Check if user has an active session
         session = database.get_auth_session(chat_id)
         if session:
-            logger.info(f"User {chat_id} has an active session")
+            logger.info(f"User {chat_id} has an active session: {session}")
             await bot.send_message(
                 chat_id=chat_id,
                 text="You already have an active authorization session. Please complete the current authorization process or wait for it to expire."
