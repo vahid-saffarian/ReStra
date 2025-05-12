@@ -137,11 +137,11 @@ async def handle_start(bot, update):
         logger.info(f"Handling start command for chat_id {chat_id}")
 
         message = """
-Welcome to the Strava Kudos Bot! 🏃‍♂️
+Welcome to the restra Bot! 🏃‍♂️
 
 To get started:
 1. Use /connect to link your Strava account
-2. Once connected, you'll receive kudos for your activities automatically!
+2. Once connected, we'll be chatting about your activities!
 
 Use /help to see all available commands.
 """
@@ -167,7 +167,7 @@ async def handle_help(bot, update):
         logger.info(f"Handling help command for chat_id {chat_id}")
 
         help_text = """
-🤖 *Strava Kudos Bot Help*
+🤖 *restra Bot Help*
 
 *Available Commands:*
 /connect - Connect your Strava account
