@@ -422,8 +422,8 @@ def send_telegram_message(message, chat_id):
         "parse_mode": "HTML"
     }
     try:
-    response = requests.post(url, data=data)
-    response.raise_for_status()
+        response = requests.post(url, data=data)
+        response.raise_for_status()
         return True
     except requests.exceptions.RequestException as e:
         logger.error(f"Error sending Telegram message: {str(e)}")
