@@ -420,8 +420,8 @@ def send_telegram_message(message, chat_id):
         "parse_mode": "HTML"
     }
     try:
-        response = requests.post(url, data=data)
-        response.raise_for_status()
+    response = requests.post(url, data=data)
+    response.raise_for_status()
         return True
     except requests.exceptions.RequestException as e:
         logger.error(f"Error sending Telegram message: {str(e)}")
@@ -498,7 +498,7 @@ def process_activities_for_user(chat_id):
         activities = get_activities(access_token, after_ts)
         if not activities:
             return
-            
+
         send_telegram_message(get_random_greeting(), chat_id)
         
         for activity in activities:
@@ -554,6 +554,6 @@ async def process_update(update):
                 await handle_auth_code(bot, update)
             else:
                 logger.info(f"Message not handled for chat_id {chat_id}")
-                
+
     except Exception as e:
         logger.error(f"Error processing update: {str(e)}")
