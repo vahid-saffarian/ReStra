@@ -320,8 +320,10 @@ async def handle_status(bot, update):
             )
             return
 
-        # Check if token is expired
-        expires_at = datetime.fromisoformat(user['expires_at'])
+        # Get expiration time (it's already a datetime object)
+        expires_at = user['expires_at']
+        
+        # Check if token has expired
         if datetime.now() >= expires_at:
             logger.info(f"Token expired for user {chat_id}")
             await bot.send_message(
@@ -335,7 +337,7 @@ async def handle_status(bot, update):
             chat_id=chat_id,
             text="✅ Your Strava account is connected and active."
         )
-        logger.info(f"Successfully sent status to user {chat_id}")
+        logger.info(f"Sent active status message to user {chat_id}")
 
     except Exception as e:
         logger.error(f"Error in handle_status: {str(e)}")
