@@ -205,8 +205,8 @@ async def handle_connect(bot, update):
     try:
         chat_id = update['message']['chat']['id']
         logger.info(f"Handling connect command for chat_id {chat_id}")
-        
-        # Check if user already has an active session
+
+        # Check if user has an active session
         session = database.get_auth_session(chat_id)
         if session:
             logger.info(f"User {chat_id} has an active session")
@@ -239,6 +239,8 @@ async def handle_connect(bot, update):
         # Create auth session
         state = os.urandom(16).hex()
         timestamp = datetime.now()
+        logger.info(f"Creating auth session for {chat_id} with state {state} at {timestamp}")
+        
         if not database.add_auth_session(chat_id, state, timestamp):
             logger.error(f"Failed to create auth session for {chat_id}")
             await bot.send_message(
@@ -549,11 +551,26 @@ async def process_update(update):
                 elif command == "/status":
                     await handle_status(bot, update)
             # Handle auth code
-            elif database.get_auth_session(chat_id):
-                logger.info(f"Processing auth code for chat_id {chat_id}")
-                await handle_auth_code(bot, update)
             else:
-                logger.info(f"Message not handled for chat_id {chat_id}")
+                session = database.get_auth_session(chat_id)
+                logger.info(f"Auth session for {chat_id}: {session}")
+                if session:
+                    logger.info(f"Processing auth code for chat_id {chat_id}")
+                    await handle_auth_code(bot, update)
+                else:
+                    logger.info(f"No active auth session found for chat_id {chat_id}")
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text="No active authorization session found. Please use /connect to start the authorization process."
+                    )
 
     except Exception as e:
         logger.error(f"Error processing update: {str(e)}")
+        if 'bot' in locals() and 'chat_id' in locals():
+            try:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text="Sorry, there was an error processing your message. Please try again."
+                )
+            except Exception as send_error:
+                logger.error(f"Error sending error message: {str(send_error)}")
