@@ -7,7 +7,7 @@ import tracemalloc
 import asyncio
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from strava_auth import get_strava_header, exchange_code_for_token, get_authorization_url
+from strava_auth import get_strava_header, exchange_code_for_token, get_authorization_url, refresh_access_token
 import database
 import telegram
 
@@ -485,45 +485,101 @@ def get_activity_emoji(activity_type):
     return emoji_map.get(activity_type, '🏃')  # Default to running emoji if type not found
 
 def process_activities_for_user(chat_id):
-    """Process activities for a specific user"""
+    """Process activities for a specific user (suitable for a periodic job)."""
     try:
-        user = database.get_user(chat_id)
-        if not user or not user[1]:  # No access token
-            return
-            
-        access_token = user[1]
-        if datetime.now().timestamp() >= user[3]:  # Token expired
-            # TODO: Implement token refresh
-            return
-            
-        twelve_hours_ago = datetime.now() - timedelta(hours=12)
-        after_ts = int(twelve_hours_ago.timestamp())
-        
-        activities = get_activities(access_token, after_ts)
-        if not activities:
+        logger.info(f"Periodic check: Attempting to process activities for user {chat_id}.")
+        user = database.get_user(chat_id) # Fetches from Redis, returns a dict or None
+
+        if not user:
+            logger.info(f"Periodic check: User {chat_id} not found or not connected. Skipping.")
             return
 
-        send_telegram_message(get_random_greeting(), chat_id)
+        # Gracefully access user data
+        access_token = user.get('access_token')
+        refresh_token = user.get('refresh_token')
+        expires_at = user.get('expires_at') # This should be a datetime object from database.get_user()
+
+        if not all([access_token, refresh_token, expires_at]):
+            logger.error(f"Periodic check: User {chat_id} data is incomplete. access_token: {'found' if access_token else 'missing'}, refresh_token: {'found' if refresh_token else 'missing'}, expires_at: {'found' if expires_at else 'missing'}. Skipping.")
+            return
+
+        # Ensure expires_at is a datetime object (it should be, but defensive check)
+        if not isinstance(expires_at, datetime):
+            logger.error(f"Periodic check: User {chat_id} expires_at is not a datetime object: {type(expires_at)}. Skipping.")
+            # Potentially try to parse it if it's a string, or log an error and return
+            return
+
+
+        # Check if token has expired or will expire soon (e.g., within 15 minutes)
+        if datetime.now() >= expires_at - timedelta(minutes=15):
+            logger.info(f"Periodic check: Token for user {chat_id} (expires at {expires_at}) is expired or expiring soon. Refreshing...")
+            
+            new_tokens = refresh_access_token(refresh_token)
+
+            if new_tokens and 'access_token' in new_tokens and 'expires_in' in new_tokens:
+                logger.info(f"Periodic check: Successfully refreshed token for user {chat_id}.")
+                access_token = new_tokens['access_token'] # Use the new token for this run
+                
+                # Calculate new expiration datetime object
+                new_expires_at_timestamp = datetime.now().timestamp() + new_tokens['expires_in']
+                new_expires_at_datetime = datetime.fromtimestamp(new_expires_at_timestamp)
+                
+                # Update user data in Redis with new tokens and expiry
+                database.add_user(
+                    chat_id,
+                    new_tokens['access_token'],
+                    new_tokens.get('refresh_token', refresh_token), # Use new refresh token if Strava provides it
+                    new_expires_at_datetime # Pass the datetime object
+                )
+                expires_at = new_expires_at_datetime # Update expires_at for current run if needed, though not strictly necessary here
+            else:
+                logger.error(f"Periodic check: Failed to refresh token for user {chat_id}. Response: {new_tokens}. Notifying user.")
+                send_telegram_message(
+                    "⚠️ Your Strava connection needs to be refreshed, but it failed. Please try /disconnect and /connect again.",
+                    str(chat_id) # Ensure chat_id is a string if send_telegram_message expects it
+                )
+                return # Cannot proceed without a valid token
+
+        # Fetch activities from the last 12 hours
+        twelve_hours_ago = datetime.now() - timedelta(minutes=1)
+        after_ts = int(twelve_hours_ago.timestamp())
         
+        logger.info(f"Periodic check: Fetching activities for user {chat_id} after timestamp {after_ts}.")
+        activities = get_activities(access_token, after_ts) # Assumes get_activities is synchronous
+        
+        if activities is None: 
+            logger.error(f"Periodic check: Failed to fetch activities for user {chat_id}. An error occurred in get_activities.")
+            return
+        if not activities: 
+            logger.info(f"Periodic check: No new activities for user {chat_id} in the last 12 hours.")
+            return
+
+        logger.info(f"Periodic check: Found {len(activities)} new activities for user {chat_id}.")
+        send_telegram_message(get_random_greeting(), str(chat_id))
+        
+        activity_count = 0
         for activity in activities:
-            activity_name = activity.get('name', 'Unnamed')
-            activity_id = activity.get('id')
+            activity_name = activity.get('name', 'Unnamed Activity')
             activity_type = activity.get('type', 'Unknown')
-            duration = round(activity.get('moving_time', 0) / 60, 2)
+            duration_seconds = activity.get('moving_time', 0)
+            duration_minutes = round(duration_seconds / 60, 2)
             
             emoji = get_activity_emoji(activity_type)
             cheer = get_random_cheer().format(name=activity_name)
             
-            message = f"""
+            message = f\"\"\"
 {emoji} <b>{cheer}</b>
-{duration} minutes well spent!
-"""
-            send_telegram_message(message, chat_id)
+{duration_minutes} minutes well spent!
+\"\"\"
+            send_telegram_message(message, str(chat_id))
+            activity_count +=1
             
-        send_telegram_message(get_random_signoff(), chat_id)
+        send_telegram_message(f"Processed {activity_count} activities. {get_random_signoff()}", str(chat_id))
+        logger.info(f"Periodic check: Processed {activity_count} activities for user {chat_id}.")
 
     except Exception as e:
-        logger.error(f"Error processing activities for user {chat_id}: {str(e)}")
+        # Log the full traceback for unexpected errors
+        logger.exception(f"Periodic check: Unexpected error processing activities for user {chat_id}: {str(e)}")
 
 async def process_update(update):
     """Process a single update from webhook"""
