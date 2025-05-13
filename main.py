@@ -567,10 +567,7 @@ def process_activities_for_user(chat_id):
             emoji = get_activity_emoji(activity_type)
             cheer = get_random_cheer().format(name=activity_name)
             
-            message = f"
-                {emoji} <b>{cheer}</b>
-                {duration_minutes} minutes well spent!
-            "
+            message = f"{emoji} <b>{cheer}</b> {duration_minutes} minutes well spent!"
             send_telegram_message(message, str(chat_id))
             activity_count +=1
             
